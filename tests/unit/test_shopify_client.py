@@ -676,3 +676,30 @@ async def test_i11_create_cart_request_matches_allow_list(fast_client_with_clean
         assert set(arguments["cart"].keys()) <= _CREATE_CART_ALLOWED_CART_KEYS
     finally:
         await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_default_http_client_sends_descriptive_user_agent(search_catalog_fixture):
+    """I12 'polite client': a self-owned httpx.AsyncClient carries a descriptive
+    User-Agent, distinct from Shopify's own default, so a store operator can identify
+    this traffic without decoding the JSON-RPC body."""
+    from bigbrain.shopify.client import USER_AGENT
+
+    client = ShopifyMCPClient(
+        "test-shop.example.com",
+        "https://example.com/profile.json",
+        rate_per_sec=1000,
+        backoff_base_s=0.01,
+    )
+    try:
+        structured = search_catalog_fixture["result"]["structuredContent"]
+        success_response = {"jsonrpc": "2.0", "id": 1, "result": structured}
+        with respx.mock:
+            route = respx.post("https://test-shop.example.com/api/ucp/mcp").mock(
+                return_value=Response(200, json=success_response)
+            )
+            await client.search_catalog(query="wool runner shoes")
+
+        assert route.calls.last.request.headers["user-agent"] == USER_AGENT
+    finally:
+        await client.aclose()

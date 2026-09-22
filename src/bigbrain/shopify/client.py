@@ -32,6 +32,11 @@ logger = get_logger("shopify.client")
 
 _POLICY_TOOLS = {"search_shop_policies_and_faqs"}
 
+# I12 "polite client": identify ourselves in the transport layer too, not just the
+# UCP agent profile -- a store operator inspecting server logs should be able to tell
+# this traffic apart from a browser without needing to decode the JSON-RPC body.
+USER_AGENT = "BigBrainShop/0.1 (+unaffiliated shopping agent; see meta.ucp-agent.profile)"
+
 
 class ShopifyClientError(Exception):
     """Base for all errors this client raises."""
@@ -89,7 +94,9 @@ class ShopifyMCPClient:
         self.circuit_breaker = circuit_breaker or CircuitBreaker(
             failure_threshold=failure_threshold, cooldown_s=cooldown_s
         )
-        self._http = http_client or httpx.AsyncClient(timeout=timeout_s)
+        self._http = http_client or httpx.AsyncClient(
+            timeout=timeout_s, headers={"User-Agent": USER_AGENT}
+        )
         self._owns_http = http_client is None
         self.max_retries = max_retries
         self.backoff_base_s = backoff_base_s
