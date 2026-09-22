@@ -96,6 +96,14 @@ class ReplayShopify:
                     key = (entry["tool"], canonical_json_bytes(entry["arguments"]))
                     self._index[key] = entry["result"]
 
+    def get_raw_result(self, tool: str, arguments: dict[str, Any]) -> dict:
+        """Public raw lookup: the recorded `result` dict for (tool, arguments), with
+        no `ShopProduct`/etc. parsing applied. Used by `FakeShopifyMCPServer`, which
+        needs to answer a live JSON-RPC request with whatever was actually recorded,
+        not a typed model.
+        """
+        return self._lookup(tool, arguments)
+
     def _lookup(self, tool: str, arguments: dict[str, Any]) -> dict:
         key = (tool, canonical_json_bytes(arguments))
         if key not in self._index:
