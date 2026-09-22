@@ -3,6 +3,66 @@
 One entry per milestone, newest first (CLAUDE.md working rule 4). Milestones and their
 acceptance criteria are spec section 11.
 
+## M2 - Shopify client & fixtures (done)
+
+Done:
+
+- `docs/SHOPIFY_NOTES.md`: written from LIVE verification (spec §0.5), not from the
+  spec's or Shopify's docs' summaries. Confirmed real behavior disagrees with both in
+  several places -- cart/checkout/order tools live at `/api/ucp/mcp` not `/api/mcp`;
+  `search_shop_policies_and_faqs` has no `structuredContent`; product `description`
+  uses `html` not `plain` on the storefront catalog (vs `plain` on the global
+  catalog); the agent profile is genuinely server-fetched (missing/unreachable/wrong
+  Content-Type all hard-fail with a 422); storefront vs global catalog use different
+  product ID namespaces; an empty `query` lists the catalog (useful for M3's profiler).
+- `shopify/models.py`: lenient pydantic models (`extra="ignore"`) for real Shopify
+  data -- `Money`, `Description` (html/plain), `ShopProduct`, `ShopVariant`,
+  `ShopPolicyAnswer`, `ShopCart`. Tested against real captured responses in
+  `tests/unit/data/shopify_live_samples/`.
+- `shopify/{ratelimit,cache,circuit}.py`: I12's "polite client" pieces -- async
+  `TokenBucket`, injectable-clock `TTLCache`, `CircuitBreaker` with force-open for a
+  hard 403 and threshold+cooldown decay for 429/5xx.
+- `shopify/client.py`: `ShopifyMCPClient` -- one client per store, rate-limited,
+  cached, circuit-broken, retrying with backoff, logging every call, with a
+  descriptive `User-Agent`. Optional `record_path` writes a JSONL cassette.
+- `shopify/datasource.py`: `ShopDataSource` protocol, `LiveShopify`, `ReplayShopify`
+  (reads the cassette `ShopifyMCPClient` writes, exact-match lookup, raises
+  `FixtureNotFoundError` rather than guessing).
+- `shopify/fake_server.py`: `FakeShopifyMCPServer` (FastAPI), serves cassettes over
+  the same JSON-RPC shape for offline net-mode/CI, proven protocol-compatible with a
+  real `ShopifyMCPClient` via `httpx.ASGITransport`.
+- `ui/cli.py`: `bigbrain shopify probe`/`record`, wired as the `bigbrain` console
+  script.
+- `data/agent_profile.json`: our own UCP agent profile (not Shopify's example),
+  hosted live via jsDelivr against this repo's own GitHub mirror (GitHub Gist raw
+  URLs don't work -- wrong Content-Type; see SHOPIFY_NOTES.md).
+- **Real bug found and fixed via live recording**: `search_catalog`/`lookup_catalog`/
+  `get_product` read `result["products"]`/`result["product"]` directly instead of
+  `result["structuredContent"]["products"]`/`["product"]`. Every unit test passed
+  because the mocks were built by extracting `structuredContent` and using it AS the
+  mocked `result`, silently agreeing with the same bug. Caught only by running
+  `bigbrain shopify record` against a real store. Fixed with a small `_unwrap()`
+  helper in both `ShopifyMCPClient` and `ReplayShopify`; every affected test mock
+  rewritten to the correct, fully-nested real shape. Full account in
+  `docs/SHOPIFY_NOTES.md`.
+- Fixtures recorded live for 5 diverse stores (spec's example verticals):
+  `allbirds.com` (apparel), `hydeline.com` (home goods), `nomadgoods.com`
+  (electronics accessories), `colourpop.com` (beauty), `magicspoon.com`
+  (food/beverage). Each replays correctly through `ReplayShopify` and
+  `FakeShopifyMCPServer`.
+- I11 audit: explicit tests inspecting real outbound request bodies against an
+  allow-list (necessary-but-not-sufficient -- the matcher layer, a later milestone,
+  is what decides what's safe to send in the first place).
+
+Verification: `uv run pytest -q` -> 232 passed, 0 deselected; `uv run ruff check .`
+and `uv run ruff format --check .` -> clean; `bigbrain shopify probe` run live
+against 5 real stores; `bigbrain shopify record` run live against the same 5,
+producing the committed fixtures.
+
+Next: M3 - Taxonomy & Shop Profiler (taxonomy loader/utilities, catalog sampling,
+rule-based category assignment, aggregation, `ShopProfile`, `ShopifyAdmissionPolicy`,
+directory admission).
+
 ## M1 - Wire format and crypto (done)
 
 Done:
