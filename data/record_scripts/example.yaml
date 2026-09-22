@@ -1,0 +1,9 @@
+# Example script for `bigbrain shopify record --shop <domain> --script <this file>`.
+# All three keys are optional; omit any you don't need.
+search_catalog:
+  - "shoes"
+  - "wool runner"
+get_product: []
+search_policies:
+  - "what is your return policy"
+  - "do you ship internationally"
