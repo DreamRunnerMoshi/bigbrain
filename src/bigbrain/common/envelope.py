@@ -14,7 +14,7 @@ from bigbrain.common.canonical import canonical_json_bytes
 from bigbrain.common.crypto import sign, verify
 
 
-class MessageType(str, Enum):
+class MessageType(str, Enum):  # noqa: UP042 -- consistent with RuntimeMode (common/config.py)
     """The performatives of BIGBRAIN_SPEC.md section 6.1's `type` field (FIPA Contract Net
     + BigBrain's checkout extension, spec section 4). Defined here (not in protocol/)
     because these are the envelope schema's own allowed values; protocol/performatives.py
