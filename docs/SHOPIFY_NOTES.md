@@ -189,6 +189,17 @@ MCP servers, you agree to the Shopify API License and Terms of Use." Not indepen
 re-read in full this session (spec §12 open problem #3 already flags legal review as a
 pre-launch requirement, not a coding task).
 
+## Cart response shape — NOT empirically confirmed
+
+`get_cart`/`create_cart`/`update_cart` **input** schemas were captured live (see
+`update_cart`'s `cart.line_items[].{id, quantity, item.id}` shape above), but their
+*response* shape was not probed — calling `create_cart`/`update_cart` for real would
+create a live cart on someone else's production store as a side effect of research,
+which isn't a reasonable thing to do outside an actual purchase flow. `ShopCart` is
+therefore inferred from the input schema and general Shopify cart conventions, not
+confirmed from a real response. Spot-check it with a real `create_cart` call (in a
+throwaway/test context) before M5 relies on it for real checkout handoff.
+
 ## What M2's code must NOT assume (recap for implementers)
 
 1. Cart/checkout/order tools are on `/api/ucp/mcp`, not `/api/mcp`.
