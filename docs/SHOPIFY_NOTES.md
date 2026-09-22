@@ -166,6 +166,27 @@ difference above). BIGBRAIN_SPEC.md's architecture (§5, §5.1.1) is built entir
 `{shop}/api/ucp/mcp`. The global catalog is out of scope for M2 (spec §12 open problem #9
 notes it as a future store-discovery mechanism, not part of the prototype's live path).
 
+## Agent profile hosting — GitHub Gist raw URLs do NOT work
+
+Confirmed live: Shopify validates the fetched profile's `Content-Type` header, not
+just reachability. GitHub Gist raw URLs (`gist.githubusercontent.com/.../raw/...`)
+serve `text/plain; charset=utf-8` regardless of the file extension, which Shopify
+rejects with `422 {"code": "profile_malformed", "content": "Unable to fetch agent
+profile: Invalid content type"}`. jsDelivr's CDN against a real GitHub **repository**
+(not a gist -- jsDelivr has no gist-proxy path that resolved) DOES set
+`Content-Type: application/json` for a `.json` file and Shopify accepts it. Confirmed
+working end to end:
+
+```
+https://cdn.jsdelivr.net/gh/<user>/<repo>@<branch>/data/agent_profile.json
+```
+
+`Settings.shopify_agent_profile_url` should be set to this kind of URL for live mode.
+Caveat: jsDelivr caches aggressively (up to ~7 days for a branch-pinned `@main`
+reference per their own docs) -- a profile edit may take a while to propagate; use a
+tag or commit SHA in the URL instead of `@main` if you need an edit to show up
+immediately, or purge jsDelivr's cache via their purge API.
+
 ## Rate limits — no published numbers, tiered by identification
 
 From `shopify.dev/docs/agents/profiles/auth-and-rate-limiting` (not independently

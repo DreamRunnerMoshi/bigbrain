@@ -1,0 +1,4 @@
+# Local config for live Shopify calls (bigbrain shopify probe/record --config <this file>).
+# See docs/SHOPIFY_NOTES.md "Agent profile hosting" for why this must be a real,
+# publicly reachable URL serving Content-Type: application/json (not a GitHub Gist).
+shopify_agent_profile_url: "https://cdn.jsdelivr.net/gh/DreamRunnerMoshi/bigbrain@main/data/agent_profile.json"
