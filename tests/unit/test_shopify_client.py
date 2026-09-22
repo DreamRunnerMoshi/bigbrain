@@ -547,3 +547,62 @@ async def test_aclose_no_error():
 
     # Call aclose - should not raise
     await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_record_path_writes_cassette_without_meta(tmp_path, search_catalog_fixture):
+    """A client constructed with record_path writes one JSONL cassette line per
+    successful call, with `meta` stripped from the recorded arguments (it's a
+    record-time credential, not part of what identifies the call for replay).
+    """
+    cassette_path = tmp_path / "test-shop.example.com" / "cassette.jsonl"
+    client = ShopifyMCPClient(
+        "test-shop.example.com",
+        "https://example.com/profile.json",
+        rate_per_sec=1000,
+        backoff_base_s=0.01,
+        record_path=cassette_path,
+    )
+    try:
+        structured = search_catalog_fixture["result"]["structuredContent"]
+        success_response = {"jsonrpc": "2.0", "id": 1, "result": structured}
+        with respx.mock:
+            respx.post("https://test-shop.example.com/api/ucp/mcp").mock(
+                return_value=Response(200, json=success_response)
+            )
+            await client.search_catalog(query="wool runner shoes")
+
+        assert cassette_path.exists()
+        lines = cassette_path.read_text(encoding="utf-8").strip().splitlines()
+        assert len(lines) == 1
+        entry = json.loads(lines[0])
+        assert entry["tool"] == "search_catalog"
+        assert "meta" not in entry["arguments"]
+        assert entry["arguments"]["catalog"]["query"] == "wool runner shoes"
+        assert entry["result"] == structured
+        assert "recorded_at" in entry
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_no_record_path_writes_nothing(tmp_path, search_catalog_fixture):
+    """Without record_path (the default), no cassette file is created."""
+    client = ShopifyMCPClient(
+        "test-shop.example.com",
+        "https://example.com/profile.json",
+        rate_per_sec=1000,
+        backoff_base_s=0.01,
+    )
+    try:
+        structured = search_catalog_fixture["result"]["structuredContent"]
+        success_response = {"jsonrpc": "2.0", "id": 1, "result": structured}
+        with respx.mock:
+            respx.post("https://test-shop.example.com/api/ucp/mcp").mock(
+                return_value=Response(200, json=success_response)
+            )
+            await client.search_catalog(query="wool runner shoes")
+
+        assert list(tmp_path.iterdir()) == []
+    finally:
+        await client.aclose()

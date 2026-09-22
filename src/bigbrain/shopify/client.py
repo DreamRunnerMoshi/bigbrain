@@ -5,15 +5,23 @@ https://{shop}/api/mcp -- NOT the split the spec's own module summary describes,
 SHOPIFY_NOTES.md "Disagreement #1". Every call goes through a per-store rate limiter,
 TTL cache, and circuit breaker (I12), and is logged (store, tool, latency, status) to
 support I11/I12 audits (spec section 5.1.3).
+
+Optionally records every successful call to a JSONL cassette (`record_path`) for
+`ReplayShopify` (spec section 5.1.5) to serve later -- see `shopify/datasource.py`.
+Recording reuses the exact `arguments` dict each public method already builds (minus
+`meta`, which is a record-time credential, not part of what identifies the call), so
+there is no separate argument-construction logic to keep in sync.
 """
 
 import asyncio
 import json
 import time
+from pathlib import Path
 from typing import Any
 
 import httpx
 
+from bigbrain.common.clock import SystemClock, rfc3339
 from bigbrain.common.logging import get_logger
 from bigbrain.shopify.cache import TTLCache
 from bigbrain.shopify.circuit import CircuitBreaker, CircuitOpenError
@@ -70,6 +78,7 @@ class ShopifyMCPClient:
         timeout_s: float = 10.0,
         max_retries: int = 3,
         backoff_base_s: float = 0.5,
+        record_path: Path | None = None,
     ) -> None:
         self.shop_domain = shop_domain
         self.agent_profile_url = agent_profile_url
@@ -84,7 +93,28 @@ class ShopifyMCPClient:
         self._owns_http = http_client is None
         self.max_retries = max_retries
         self.backoff_base_s = backoff_base_s
+        self.record_path = record_path
         self._next_id = 0
+        if self.record_path is not None:
+            self.record_path.parent.mkdir(parents=True, exist_ok=True)
+
+    def _record(self, tool: str, arguments: dict[str, Any], result: dict) -> None:
+        """Append one cassette line for `ReplayShopify` (spec section 5.1.5). `meta`
+        is stripped from the recorded arguments -- it's a record-time credential
+        (the agent profile URL), not part of what identifies the call for replay
+        matching (see `shopify/datasource.py`).
+        """
+        if self.record_path is None:
+            return
+        recorded_arguments = {k: v for k, v in arguments.items() if k != "meta"}
+        entry = {
+            "tool": tool,
+            "arguments": recorded_arguments,
+            "result": result,
+            "recorded_at": rfc3339(SystemClock().now()),
+        }
+        with self.record_path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry) + "\n")
 
     async def aclose(self) -> None:
         if self._owns_http:
@@ -218,6 +248,7 @@ class ShopifyMCPClient:
             result = payload.get("result", {})
             if cache_key is not None:
                 self.cache.set(cache_key, result)
+            self._record(tool, arguments, result)
             return result
 
     async def list_tools(self, *, policy_endpoint: bool = False) -> list[dict]:
