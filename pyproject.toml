@@ -42,6 +42,7 @@ minversion = "8.0"
 testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "-ra -m 'not live'"
+asyncio_mode = "auto"
 markers = [
     "live: hits real Shopify stores over the network; skipped by default (see CLAUDE.md)",
 ]
