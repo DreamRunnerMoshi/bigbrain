@@ -109,3 +109,21 @@ two nonce-based schemes. Ed25519 signatures for the audit log (promised in ADR-0
 still deferred past this module — wiring a worker's signing key into `AuditLog.record()`
 needs worker identity/key management, which lands with the directory/worker milestones,
 not here.
+
+## ADR-005 - `MessageType` lives in `common/envelope.py`, `protocol/` re-exports it
+
+**Context.** Spec §10's repo layout lists "performatives" as part of `protocol/`, but the
+envelope's `type` field and its allowed values are defined by §6.1 (the envelope schema
+itself), not by §6.2 (payloads). `common/` must not depend on `protocol/` — `protocol/`
+is the higher layer that builds on `common/`'s primitives (crypto, canonical JSON, ids).
+
+**Decision.** Define `MessageType` as part of `common/envelope.py`, since the `Envelope`
+model's `type: MessageType` field needs it and `Envelope` itself lives in `common/` (per
+§10's own module comment: "common: envelope, canonical json, crypto, ids, clock, config,
+logging, audit"). `protocol/performatives.py` does `from bigbrain.common.envelope import
+MessageType` and re-exports it, so protocol-layer code (state machine, payload builders)
+imports it from the semantically-named location the spec's layout promises, without
+inverting the dependency direction.
+
+**Consequences.** One source of truth for message types, defined alongside the schema
+that constrains them; `common/` stays free of any import from `protocol/`.
