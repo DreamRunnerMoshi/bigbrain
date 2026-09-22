@@ -13,6 +13,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from bigbrain.common.canonical import canonical_json_bytes
+
 GENESIS_HASH = "0" * 64
 
 
@@ -39,7 +41,7 @@ class AuditEvent(BaseModel):
 def _canonical_bytes(event: AuditEvent) -> bytes:
     """Canonical JSON of the event, entry_hash excluded -- the input to entry_hash."""
     data = event.model_dump(exclude={"entry_hash"})
-    return json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return canonical_json_bytes(data)
 
 
 class AuditLog:
