@@ -70,3 +70,42 @@ changing the file format — hash chaining stays, a signature field gets added.
 **Consequences.** M0's audit log proves an entry wasn't silently altered after the fact
 once you have the whole file, but a compromised process could still fabricate a consistent
 chain from scratch. That gap closes in M1.
+
+## ADR-004 - Crypto primitives: which PyNaCl construction per message type
+
+**Context.** BIGBRAIN_SPEC.md §6.5 assigns a construction per message type (SecretBox for
+intents with a wrapped fresh key, SealedBox for offers, Box for counters/checkout, Ed25519
+for envelope signatures) but leaves the concrete function shapes and key encoding open.
+
+**Decision.**
+- All keys are raw 32-byte values (not PyNaCl object types) at module boundaries, so they
+  serialize as base64 on the wire and pass through pydantic string/bytes fields without a
+  custom type. `common/crypto.py` wraps `nacl.signing`/`nacl.public`/`nacl.secret` and
+  converts to/from raw bytes at the edges.
+- `verify()` never raises — a bad signature, wrong-length key, or tampered data all return
+  `False`, so call sites can implement I7 ("bad signatures are dropped and logged") without
+  a try/except at every call site. `sign()`, and every `*_decrypt` function, DO raise
+  (`nacl.exceptions.CryptoError` on a decrypt/MAC failure) — decryption failure is a
+  different, rarer situation than "a message came in with a bad signature" and callers
+  should see it explicitly rather than have it silently swallowed.
+- `secretbox_encrypt`/`box_encrypt` return `(nonce, ciphertext)` as two separate values,
+  matching the envelope's `nonce` / `ciphertext` wire fields directly (spec §6.1). PyNaCl's
+  own `EncryptedMessage` already carries both; this module just splits them at the API
+  boundary so callers never have to slice envelope-format bytes apart by hand.
+- `sealedbox_encrypt` returns one self-contained blob (libsodium embeds a fresh ephemeral
+  public key inside it, no separate nonce needed). For a PROPOSE (offer) envelope, the wire
+  `nonce` field is therefore left as an empty string — SealedBox-sealed payloads don't have
+  one. This is the simplest option that doesn't force a meaningless nonce into the schema
+  for one message type.
+- Key wrapping for intents (spec §6.2: "fresh symmetric key wrapped with the channel key")
+  is not a separate function — it's just `secretbox_encrypt(channel_key, fresh_key)` using
+  the same primitive twice (once to wrap the fresh key, once — with the fresh key — to
+  encrypt the payload). No new primitive needed; the caller (the future `protocol`/`buyer`
+  code that builds a CFP) composes the two calls.
+
+**Consequences.** Everything downstream (envelope construction, the buyer/merchant
+modules) works with raw bytes keys and gets a uniform `(nonce, ciphertext)` shape for the
+two nonce-based schemes. Ed25519 signatures for the audit log (promised in ADR-003) are
+still deferred past this module — wiring a worker's signing key into `AuditLog.record()`
+needs worker identity/key management, which lands with the directory/worker milestones,
+not here.
