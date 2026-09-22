@@ -606,3 +606,73 @@ async def test_no_record_path_writes_nothing(tmp_path, search_catalog_fixture):
         assert list(tmp_path.iterdir()) == []
     finally:
         await client.aclose()
+
+
+# I11 ("outbound query minimization"): the client itself must never send a field
+# beyond what the caller explicitly passed. This is a necessary-but-not-sufficient
+# piece of I11 -- the matcher layer (a later milestone) is what actually decides what's
+# safe to send; this test guarantees the client doesn't silently widen it. Spec §2's
+# required I11 test: "intercepts all outbound requests and checks them against an
+# allow-list."
+_SEARCH_CATALOG_ALLOWED_TOP_LEVEL = {"meta", "catalog"}
+_SEARCH_CATALOG_ALLOWED_CATALOG_KEYS = {"query", "filters", "context", "pagination"}
+_CREATE_CART_ALLOWED_TOP_LEVEL = {"meta", "cart"}
+_CREATE_CART_ALLOWED_CART_KEYS = {"line_items"}
+
+
+@pytest.mark.asyncio
+async def test_i11_search_catalog_request_matches_allow_list(
+    fast_client_with_cleanup, search_catalog_fixture
+):
+    """Every field search_catalog puts on the wire is in the allow-list -- no buyer
+    identity, no extra tracking, nothing the caller didn't explicitly pass."""
+    client = fast_client_with_cleanup
+    try:
+        structured = search_catalog_fixture["result"]["structuredContent"]
+        success_response = {"jsonrpc": "2.0", "id": 1, "result": structured}
+        with respx.mock:
+            route = respx.post("https://test-shop.example.com/api/ucp/mcp").mock(
+                return_value=Response(200, json=success_response)
+            )
+            await client.search_catalog(
+                query="wool runner shoes",
+                filters={"price": {"min": 0, "max": 20000}},
+                context={"address_country": "US"},
+            )
+
+        request_body = json.loads(route.calls.last.request.content)
+        arguments = request_body["params"]["arguments"]
+
+        assert set(arguments.keys()) <= _SEARCH_CATALOG_ALLOWED_TOP_LEVEL
+        assert set(arguments["catalog"].keys()) <= _SEARCH_CATALOG_ALLOWED_CATALOG_KEYS
+        # meta must contain only the agent profile -- no buyer identity fields
+        assert set(arguments["meta"].keys()) == {"ucp-agent"}
+        assert set(arguments["meta"]["ucp-agent"].keys()) == {"profile"}
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_i11_create_cart_request_matches_allow_list(fast_client_with_cleanup):
+    """create_cart puts only meta + cart.line_items on the wire -- no buyer identity
+    fields beyond what the caller passed in line_items itself."""
+    client = fast_client_with_cleanup
+    try:
+        mock_response = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {"cart": {"id": "gid://shopify/Cart/1"}},
+        }
+        with respx.mock:
+            route = respx.post("https://test-shop.example.com/api/ucp/mcp").mock(
+                return_value=Response(200, json=mock_response)
+            )
+            await client.create_cart([{"item": {"id": "variant-1"}, "quantity": 1}])
+
+        request_body = json.loads(route.calls.last.request.content)
+        arguments = request_body["params"]["arguments"]
+
+        assert set(arguments.keys()) <= _CREATE_CART_ALLOWED_TOP_LEVEL
+        assert set(arguments["cart"].keys()) <= _CREATE_CART_ALLOWED_CART_KEYS
+    finally:
+        await client.aclose()
