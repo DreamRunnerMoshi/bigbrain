@@ -17,6 +17,13 @@ from bigbrain.common.crypto import (
     sign,
     verify,
 )
+from bigbrain.common.envelope import (
+    Envelope,
+    MessageType,
+    envelope_signing_bytes,
+    sign_envelope,
+    verify_envelope,
+)
 from bigbrain.common.ids import new_msg_id, new_session_id, uuid7
 from bigbrain.common.logging import get_logger, setup_logging
 
@@ -24,14 +31,17 @@ __all__ = [
     "AuditEvent",
     "AuditLog",
     "Clock",
+    "Envelope",
     "FixedClock",
     "GENESIS_HASH",
+    "MessageType",
     "RuntimeMode",
     "Settings",
     "SystemClock",
     "box_decrypt",
     "box_encrypt",
     "canonical_json_bytes",
+    "envelope_signing_bytes",
     "generate_encryption_keypair",
     "generate_signing_keypair",
     "generate_symmetric_key",
@@ -46,6 +56,8 @@ __all__ = [
     "secretbox_encrypt",
     "setup_logging",
     "sign",
+    "sign_envelope",
     "uuid7",
     "verify",
+    "verify_envelope",
 ]

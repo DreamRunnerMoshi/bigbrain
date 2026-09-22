@@ -127,3 +127,37 @@ inverting the dependency direction.
 
 **Consequences.** One source of truth for message types, defined alongside the schema
 that constrains them; `common/` stays free of any import from `protocol/`.
+
+## ADR-006 - Payload models: CheckoutReady/Failure split, Offer reused for revisions
+
+**Context.** Spec §6.2 describes CHECKOUT_READY in one sentence covering two different
+outcomes: "`checkout_url`, re-verified `terms`, `terms_hash`, **or** `FAILURE` with
+`reason: "terms_changed"` plus new terms (requires re-approval, I10)." The literal
+`FAILURE` there is capitalized the same way as the envelope's `type` enum values, and
+`FAILURE` is already one of the 11 `MessageType` performatives (spec §6.1) — not a new
+message type of its own. Separately, §6.2's "Revised offer from a shadow agent" paragraph
+describes a shadow agent's response to a counter as "either the same terms with
+`"negotiable": false`, or a different variant/product ... as a new `offer_version`" but
+gives no separate JSON shape — it reads as a variant of the existing Offer shape, not a
+new payload type.
+
+**Decision.**
+- `CheckoutReady` (payload for envelope `type=CHECKOUT_READY`) models ONLY the success
+  case: `checkout_url: str`, `terms: Terms`, `terms_hash: str`. All three are required.
+- A separate `Failure` payload models the failure case, sent with envelope
+  `type=FAILURE` (reusing the existing performative rather than inventing a new one):
+  `reason: str` (free text; `"terms_changed"` is I10's specific case), `new_terms: Terms
+  | None`. This keeps each envelope `type` mapped to exactly one payload shape, which
+  the state machine (added separately) and any future dispatch-by-type code can rely on.
+- `Terms` gains a `negotiable: bool | None = None` field beyond what §6.2's initial-offer
+  JSON example shows, because a revised offer needs somewhere to carry `"negotiable":
+  false`. It's `None` on a first offer (not meaningful yet) and set on a revision.
+- No separate `RevisedOffer` model: a shadow agent's revision is just another `Offer`
+  with a bumped `offer_version` (and, for the "same terms" case, `terms.negotiable =
+  False`) — same envelope `type=PROPOSE`, same payload class, one `offer_id` across the
+  session's whole back-and-forth.
+
+**Consequences.** Payload parsing can dispatch purely on `Envelope.type` with no
+secondary discriminator field inside the payload. `Offer` needs a note that
+`offer_version` increments across a negotiation while `offer_id` stays fixed, so callers
+don't invent a new id per round.
