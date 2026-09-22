@@ -110,6 +110,15 @@ class ReplayShopify:
             raise FixtureNotFoundError(self.shop_domain, tool)
         return self._index[key]
 
+    @staticmethod
+    def _unwrap(result: dict) -> dict:
+        """Same unwrapping as ShopifyMCPClient._unwrap() (shopify/client.py) --
+        catalog/cart tool results nest the actual data inside
+        `result.structuredContent` (docs/SHOPIFY_NOTES.md). Falls back to `result`
+        itself if absent.
+        """
+        return result.get("structuredContent", result)
+
     async def search_catalog(
         self,
         query: str | None = None,
@@ -132,12 +141,14 @@ class ReplayShopify:
         catalog["pagination"] = pagination
 
         result = self._lookup("search_catalog", {"catalog": catalog})
-        products = [ShopProduct.model_validate(p) for p in result.get("products", [])]
-        return products, result.get("pagination", {})
+        data = self._unwrap(result)
+        products = [ShopProduct.model_validate(p) for p in data.get("products", [])]
+        return products, data.get("pagination", {})
 
     async def lookup_catalog(self, ids: list[str]) -> list[ShopProduct]:
         result = self._lookup("lookup_catalog", {"catalog": {"ids": ids}})
-        return [ShopProduct.model_validate(p) for p in result.get("products", [])]
+        data = self._unwrap(result)
+        return [ShopProduct.model_validate(p) for p in data.get("products", [])]
 
     async def get_product(
         self, product_id: str, *, selected: list[dict] | None = None
@@ -146,7 +157,8 @@ class ReplayShopify:
         if selected is not None:
             catalog["selected"] = selected
         result = self._lookup("get_product", {"catalog": catalog})
-        return ShopProduct.model_validate(result["product"])
+        data = self._unwrap(result)
+        return ShopProduct.model_validate(data["product"])
 
     async def search_policies(self, query: str) -> list[ShopPolicyAnswer]:
         import json as _json
@@ -158,8 +170,10 @@ class ReplayShopify:
 
     async def create_cart(self, line_items: list[dict]) -> ShopCart:
         result = self._lookup("create_cart", {"cart": {"line_items": line_items}})
-        return ShopCart.model_validate(result.get("cart", result))
+        data = self._unwrap(result)
+        return ShopCart.model_validate(data.get("cart", data))
 
     async def update_cart(self, cart_id: str, line_items: list[dict]) -> ShopCart:
         result = self._lookup("update_cart", {"cart": {"id": cart_id, "line_items": line_items}})
-        return ShopCart.model_validate(result.get("cart", result))
+        data = self._unwrap(result)
+        return ShopCart.model_validate(data.get("cart", data))

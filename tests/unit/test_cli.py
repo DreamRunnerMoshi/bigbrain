@@ -186,7 +186,7 @@ def test_record_single_search_catalog(search_catalog_fixture):
             mock_response = {
                 "jsonrpc": "2.0",
                 "id": 1,
-                "result": result_data,
+                "result": {"content": [], "isError": False, "structuredContent": result_data},
             }
             respx.post("https://test-shop.example.com/api/ucp/mcp").mock(
                 return_value=Response(200, json=mock_response)
@@ -263,7 +263,11 @@ def test_record_all_three_tools(
                     json={
                         "jsonrpc": "2.0",
                         "id": 1,
-                        "result": search_result,
+                        "result": {
+                            "content": [],
+                            "isError": False,
+                            "structuredContent": search_result,
+                        },
                     },
                 ),
                 Response(
@@ -271,7 +275,11 @@ def test_record_all_three_tools(
                     json={
                         "jsonrpc": "2.0",
                         "id": 1,
-                        "result": get_product_result,
+                        "result": {
+                            "content": [],
+                            "isError": False,
+                            "structuredContent": get_product_result,
+                        },
                     },
                 ),
             ]
@@ -362,7 +370,11 @@ def test_record_continues_on_failure(search_catalog_fixture):
                     json={
                         "jsonrpc": "2.0",
                         "id": 1,
-                        "result": search_result,
+                        "result": {
+                            "content": [],
+                            "isError": False,
+                            "structuredContent": search_result,
+                        },
                     },
                 ),
             ]

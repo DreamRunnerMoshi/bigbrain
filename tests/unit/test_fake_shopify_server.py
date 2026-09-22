@@ -110,7 +110,7 @@ async def test_tools_call_recorded_search_catalog(tmp_path, search_catalog_fixtu
         mock_response = {
             "jsonrpc": "2.0",
             "id": 1,
-            "result": structured,
+            "result": {"content": [], "isError": False, "structuredContent": structured},
         }
 
         with respx.mock:
@@ -150,10 +150,13 @@ async def test_tools_call_recorded_search_catalog(tmp_path, search_catalog_fixtu
         assert body["jsonrpc"] == "2.0"
         assert body["id"] == 1
         assert "result" in body
-        assert "products" in body["result"]
+        # The fake server returns the raw recorded result verbatim (structuredContent
+        # envelope and all), matching real Shopify's wire shape (docs/SHOPIFY_NOTES.md).
+        assert "structuredContent" in body["result"]
+        assert "products" in body["result"]["structuredContent"]
 
         # Assert products match the recorded data
-        products = body["result"]["products"]
+        products = body["result"]["structuredContent"]["products"]
         assert len(products) > 0
         first_product = products[0]
         assert "id" in first_product
@@ -219,7 +222,7 @@ async def test_end_to_end_asgi_transport(tmp_path, search_catalog_fixture):
         mock_response = {
             "jsonrpc": "2.0",
             "id": 1,
-            "result": structured,
+            "result": {"content": [], "isError": False, "structuredContent": structured},
         }
 
         with respx.mock:

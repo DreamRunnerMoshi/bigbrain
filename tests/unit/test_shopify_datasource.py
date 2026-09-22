@@ -62,7 +62,7 @@ async def test_round_trip_record_then_replay_search_catalog(tmp_path, search_cat
         mock_response = {
             "jsonrpc": "2.0",
             "id": 1,
-            "result": structured,
+            "result": {"content": [], "isError": False, "structuredContent": structured},
         }
 
         with respx.mock:
@@ -132,7 +132,7 @@ async def test_different_arguments_no_match(tmp_path, search_catalog_fixture):
         mock_response = {
             "jsonrpc": "2.0",
             "id": 1,
-            "result": structured,
+            "result": {"content": [], "isError": False, "structuredContent": structured},
         }
 
         with respx.mock:
@@ -173,7 +173,7 @@ async def test_round_trip_get_product(tmp_path, get_product_fixture):
         mock_response = {
             "jsonrpc": "2.0",
             "id": 1,
-            "result": structured,
+            "result": {"content": [], "isError": False, "structuredContent": structured},
         }
 
         with respx.mock:
@@ -355,7 +355,7 @@ async def test_cassette_directory_structure(tmp_path, search_catalog_fixture):
         mock_response = {
             "jsonrpc": "2.0",
             "id": 1,
-            "result": structured,
+            "result": {"content": [], "isError": False, "structuredContent": structured},
         }
 
         with respx.mock:

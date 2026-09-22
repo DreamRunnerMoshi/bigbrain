@@ -90,7 +90,7 @@ async def test_search_catalog_success(fast_client_with_cleanup, search_catalog_f
             mock_response = {
                 "jsonrpc": "2.0",
                 "id": 1,
-                "result": structured,
+                "result": {"content": [], "isError": False, "structuredContent": structured},
             }
 
             # Mock UCP endpoint for search_catalog
@@ -138,7 +138,7 @@ async def test_get_product_success(fast_client_with_cleanup, get_product_fixture
         mock_response = {
             "jsonrpc": "2.0",
             "id": 1,
-            "result": structured,
+            "result": {"content": [], "isError": False, "structuredContent": structured},
         }
 
         with respx.mock:
@@ -239,7 +239,7 @@ async def test_429_retry_success(fast_client_with_cleanup, search_catalog_fixtur
         success_response = {
             "jsonrpc": "2.0",
             "id": 1,
-            "result": structured,
+            "result": {"content": [], "isError": False, "structuredContent": structured},
         }
 
         with respx.mock:
@@ -358,7 +358,7 @@ async def test_caching_repeated_calls(fast_client_with_cleanup, search_catalog_f
         success_response = {
             "jsonrpc": "2.0",
             "id": 1,
-            "result": structured,
+            "result": {"content": [], "isError": False, "structuredContent": structured},
         }
 
         with respx.mock:
@@ -470,7 +470,7 @@ async def test_agent_profile_in_request(fast_client_with_cleanup, search_catalog
         success_response = {
             "jsonrpc": "2.0",
             "id": 1,
-            "result": structured,
+            "result": {"content": [], "isError": False, "structuredContent": structured},
         }
 
         with respx.mock:
@@ -565,7 +565,8 @@ async def test_record_path_writes_cassette_without_meta(tmp_path, search_catalog
     )
     try:
         structured = search_catalog_fixture["result"]["structuredContent"]
-        success_response = {"jsonrpc": "2.0", "id": 1, "result": structured}
+        raw_result = {"content": [], "isError": False, "structuredContent": structured}
+        success_response = {"jsonrpc": "2.0", "id": 1, "result": raw_result}
         with respx.mock:
             respx.post("https://test-shop.example.com/api/ucp/mcp").mock(
                 return_value=Response(200, json=success_response)
@@ -579,7 +580,11 @@ async def test_record_path_writes_cassette_without_meta(tmp_path, search_catalog
         assert entry["tool"] == "search_catalog"
         assert "meta" not in entry["arguments"]
         assert entry["arguments"]["catalog"]["query"] == "wool runner shoes"
-        assert entry["result"] == structured
+        # _record() stores the RAW _call() result verbatim (envelope and all) --
+        # ReplayShopify/FakeShopifyMCPServer need the full recorded shape, not just
+        # the unwrapped structuredContent (client.py's _unwrap() happens in the
+        # public methods, after _record() has already captured the raw result).
+        assert entry["result"] == raw_result
         assert "recorded_at" in entry
     finally:
         await client.aclose()
@@ -596,7 +601,11 @@ async def test_no_record_path_writes_nothing(tmp_path, search_catalog_fixture):
     )
     try:
         structured = search_catalog_fixture["result"]["structuredContent"]
-        success_response = {"jsonrpc": "2.0", "id": 1, "result": structured}
+        success_response = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {"content": [], "isError": False, "structuredContent": structured},
+        }
         with respx.mock:
             respx.post("https://test-shop.example.com/api/ucp/mcp").mock(
                 return_value=Response(200, json=success_response)
@@ -629,7 +638,11 @@ async def test_i11_search_catalog_request_matches_allow_list(
     client = fast_client_with_cleanup
     try:
         structured = search_catalog_fixture["result"]["structuredContent"]
-        success_response = {"jsonrpc": "2.0", "id": 1, "result": structured}
+        success_response = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {"content": [], "isError": False, "structuredContent": structured},
+        }
         with respx.mock:
             route = respx.post("https://test-shop.example.com/api/ucp/mcp").mock(
                 return_value=Response(200, json=success_response)
@@ -693,7 +706,11 @@ async def test_default_http_client_sends_descriptive_user_agent(search_catalog_f
     )
     try:
         structured = search_catalog_fixture["result"]["structuredContent"]
-        success_response = {"jsonrpc": "2.0", "id": 1, "result": structured}
+        success_response = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {"content": [], "isError": False, "structuredContent": structured},
+        }
         with respx.mock:
             route = respx.post("https://test-shop.example.com/api/ucp/mcp").mock(
                 return_value=Response(200, json=success_response)

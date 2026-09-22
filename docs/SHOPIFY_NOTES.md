@@ -156,6 +156,15 @@ code that assumes the full global filter set works against a single store — on
 `lookup_catalog` on the storefront accepts **up to 10 ids** per call (global: 50) —
 confirmed from the live schema, matches the `catalog/storefront-catalog` docs page.
 
+## Global vs Storefront Catalog use DIFFERENT product ID formats
+
+Confirmed live on `hydeline.com`: the same store's product returns `gid://shopify/p/...`
+IDs from the global catalog (`catalog.shopify.com`) but `gid://shopify/Product/...` IDs
+from its own storefront catalog (`hydeline.com/api/ucp/mcp`). These are NOT
+interchangeable — a `get_product`/`lookup_catalog` call against a store's storefront
+endpoint using a global-catalog-sourced ID will not resolve. Always source product IDs
+from the SAME endpoint (storefront vs global) you'll use to look them up again.
+
 ## Global vs Storefront Catalog — two different services
 
 `catalog.shopify.com/api/ucp/mcp` (no `{shop}` — this is Shopify's own aggregator across
@@ -210,6 +219,15 @@ MCP servers, you agree to the Shopify API License and Terms of Use." Not indepen
 re-read in full this session (spec §12 open problem #3 already flags legal review as a
 pre-launch requirement, not a coding task).
 
+## Empty/wildcard query lists the catalog — confirmed working
+
+Spec §5.2 step 2 asks whether an empty or wildcard `search_catalog` query lists a
+store's catalog (relevant for the Shop Profiler, M3). Confirmed live: a `catalog`
+object with no `query` key at all (just `pagination`) returns real products on
+`nomadgoods.com`, `colourpop.com`, and `magicspoon.com` — no special wildcard syntax
+needed, just omit `query`. Useful for the profiler's catalog-sampling step before
+falling back to a seed query set.
+
 ## Cart response shape — NOT empirically confirmed
 
 `get_cart`/`create_cart`/`update_cart` **input** schemas were captured live (see
@@ -220,6 +238,29 @@ which isn't a reasonable thing to do outside an actual purchase flow. `ShopCart`
 therefore inferred from the input schema and general Shopify cart conventions, not
 confirmed from a real response. Spot-check it with a real `create_cart` call (in a
 throwaway/test context) before M5 relies on it for real checkout handoff.
+
+## Real bug caught by live recording: `client.py` didn't unwrap `structuredContent`
+
+This file documented the correct response shape from the start (see "search_catalog —
+real response shape" above: `result.structuredContent.products`), but the first
+implementation of `ShopifyMCPClient.search_catalog`/`lookup_catalog`/`get_product`
+read `result["products"]`/`result["product"]` directly instead of
+`result["structuredContent"]["products"]`/`["product"]`. Every unit test passed anyway,
+because the test mocks were built by extracting `fixture["result"]["structuredContent"]`
+and using THAT as the mocked `"result"` value — i.e. the mocks skipped the same
+wrapping layer the code skipped, so the bug and the test agreed with each other and
+neither caught it. It only surfaced when actually running `bigbrain shopify record`
+against a real store (`allbirds.com`) for the first time: `get_product` raised
+`KeyError: 'product'` on real data. Fixed with a small `_unwrap()` helper (`result.get(
+"structuredContent", result)` — falls back to `result` itself if the key is absent, so
+it doesn't regress the cart tools whose shape is still unconfirmed) in both
+`ShopifyMCPClient` and `ReplayShopify`, and by rewriting every test mock to use the
+full, correctly-nested envelope shape instead of the unwrapped shortcut.
+
+Lesson for future milestones: a mock built by slicing a piece out of a real captured
+fixture is not the same as using the real fixture, and can silently encode the same
+mistake as the code it's testing. Prefer passing the REAL, full fixture object as the
+mock body over reconstructing a "simplified" version of it.
 
 ## What M2's code must NOT assume (recap for implementers)
 

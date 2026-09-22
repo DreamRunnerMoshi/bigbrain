@@ -139,6 +139,16 @@ class ShopifyMCPClient:
     def _meta(self) -> dict:
         return {"ucp-agent": {"profile": self.agent_profile_url}}
 
+    @staticmethod
+    def _unwrap(result: dict) -> dict:
+        """Catalog/cart/checkout/order tool results nest the actual data inside
+        `result.structuredContent` (confirmed live, docs/SHOPIFY_NOTES.md) -- the
+        `result` dict itself only carries `content`/`isError`/`structuredContent`.
+        Falls back to `result` itself if `structuredContent` is absent (e.g. a tool
+        whose shape hasn't been empirically confirmed) rather than raising.
+        """
+        return result.get("structuredContent", result)
+
     async def _sleep_backoff(self, attempt: int, retry_after: str | None) -> None:
         if retry_after is not None:
             try:
@@ -300,14 +310,16 @@ class ShopifyMCPClient:
         arguments = {"meta": self._meta(), "catalog": catalog}
         cache_key = f"search_catalog:{self.shop_domain}:{query}:{cursor}:{limit}"
         result = await self._call("search_catalog", arguments, cache_key=cache_key)
-        products = [ShopProduct.model_validate(p) for p in result.get("products", [])]
-        return products, result.get("pagination", {})
+        data = self._unwrap(result)
+        products = [ShopProduct.model_validate(p) for p in data.get("products", [])]
+        return products, data.get("pagination", {})
 
     async def lookup_catalog(self, ids: list[str]) -> list[ShopProduct]:
         arguments = {"meta": self._meta(), "catalog": {"ids": ids}}
         cache_key = f"lookup_catalog:{self.shop_domain}:{','.join(sorted(ids))}"
         result = await self._call("lookup_catalog", arguments, cache_key=cache_key)
-        return [ShopProduct.model_validate(p) for p in result.get("products", [])]
+        data = self._unwrap(result)
+        return [ShopProduct.model_validate(p) for p in data.get("products", [])]
 
     async def get_product(
         self, product_id: str, *, selected: list[dict] | None = None
@@ -318,7 +330,8 @@ class ShopifyMCPClient:
         arguments = {"meta": self._meta(), "catalog": catalog}
         cache_key = f"get_product:{self.shop_domain}:{product_id}:{selected}"
         result = await self._call("get_product", arguments, cache_key=cache_key)
-        return ShopProduct.model_validate(result["product"])
+        data = self._unwrap(result)
+        return ShopProduct.model_validate(data["product"])
 
     async def search_policies(self, query: str) -> list[ShopPolicyAnswer]:
         """No structuredContent for this tool (SHOPIFY_NOTES.md, Disagreement #2) --
@@ -331,13 +344,20 @@ class ShopifyMCPClient:
         return [ShopPolicyAnswer.model_validate(a) for a in answers_raw]
 
     async def create_cart(self, line_items: list[dict]) -> ShopCart:
-        """Never cached -- this is a mutating call (creates a real cart on the store)."""
+        """Never cached -- this is a mutating call (creates a real cart on the store).
+        Cart response shape is NOT empirically confirmed (SHOPIFY_NOTES.md); `_unwrap`
+        applies the same structuredContent pattern confirmed for catalog tools, with a
+        fallback to the raw result if that turns out to be wrong.
+        """
         arguments = {"meta": self._meta(), "cart": {"line_items": line_items}}
         result = await self._call("create_cart", arguments)
-        return ShopCart.model_validate(result.get("cart", result))
+        data = self._unwrap(result)
+        return ShopCart.model_validate(data.get("cart", data))
 
     async def update_cart(self, cart_id: str, line_items: list[dict]) -> ShopCart:
-        """Never cached -- this is a mutating call."""
+        """Never cached -- this is a mutating call. See create_cart's note on the
+        unconfirmed cart response shape."""
         arguments = {"meta": self._meta(), "cart": {"id": cart_id, "line_items": line_items}}
         result = await self._call("update_cart", arguments)
-        return ShopCart.model_validate(result.get("cart", result))
+        data = self._unwrap(result)
+        return ShopCart.model_validate(data.get("cart", data))
