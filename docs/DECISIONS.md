@@ -161,3 +161,47 @@ new payload type.
 secondary discriminator field inside the payload. `Offer` needs a note that
 `offer_version` increments across a negotiation while `offer_id` stays fixed, so callers
 don't invent a new id per round.
+
+## ADR-007 - Session state machine: explicit edges for EXPIRED/REJECTED_ALL
+
+**Context.** Spec §6.4's diagram draws the happy path and the two closing branches on
+separate lines:
+```
+DRAFT → BROADCAST → COLLECTING → NEGOTIATING(r ≤ max_rounds) → SHORTLISTED → AWAITING_HUMAN
+  → APPROVED → {CHECKOUT_REQUESTED → CHECKOUT_READY → HANDED_OFF → DONE      (shopify)
+               | MANDATE_ISSUED → DONE }                                     (sim / AP2 mock)
+  → CHECKOUT_REQUESTED → TERMS_CHANGED → AWAITING_HUMAN                       (re-approval)
+  → REJECTED_ALL | EXPIRED → CLOSED
+```
+It doesn't literally spell out which upstream states can transition to `REJECTED_ALL` or
+`EXPIRED` — spec §11 requires "explicit transitions table; illegal transitions raise and
+are tested," which means every edge must be pinned down, not left as "somewhere in the
+flow."
+
+**Decision.** The explicit edge set (implemented as `TRANSITIONS` in
+`protocol/state_machine.py`):
+- Happy path exactly as drawn: `DRAFT→BROADCAST→COLLECTING→NEGOTIATING→SHORTLISTED→
+  AWAITING_HUMAN→APPROVED`, then `APPROVED→CHECKOUT_REQUESTED→CHECKOUT_READY→
+  HANDED_OFF→DONE` (Shopify) or `APPROVED→MANDATE_ISSUED→DONE` (sim/AP2).
+- `REJECTED_ALL` is reachable only from `AWAITING_HUMAN` — that's the one state where a
+  human is looking at a shortlist and can reject every offer in it (spec §8.3: SimHuman
+  "rejects" there). It is not reachable from earlier machine-only states, since nothing
+  has been shown to a human yet for them to reject.
+- `EXPIRED` is reachable from `COLLECTING`, `NEGOTIATING`, `SHORTLISTED`, and
+  `AWAITING_HUMAN` — every state where the session is waiting on something (offers,
+  negotiation rounds, a human decision) and the intent's `deadline` could pass. It is
+  NOT reachable from `APPROVED` onward: once a human has approved, spec §6.4's own
+  re-approval branch (`CHECKOUT_REQUESTED→TERMS_CHANGED→AWAITING_HUMAN`) is how a stale
+  offer gets handled post-approval, not a silent expiry.
+- `CHECKOUT_REQUESTED→TERMS_CHANGED→AWAITING_HUMAN` is a real cycle: from
+  `AWAITING_HUMAN` the flow can reach `APPROVED→CHECKOUT_REQUESTED` again, so a session
+  can loop through re-approval more than once (I10 doesn't cap this).
+- `REJECTED_ALL` and `EXPIRED` both transition only to `CLOSED`; `DONE` and `CLOSED` are
+  terminal (no outgoing edges).
+
+**Consequences.** The transition table is a plain `dict[SessionState,
+frozenset[SessionState]]`, so "is this legal" is one dict+set lookup and the full edge
+set is visible in one place — easy to audit for I1 (nothing reaches
+`CHECKOUT_REQUESTED` except via `APPROVED`, and `APPROVED` only from `AWAITING_HUMAN`).
+The illegal-transition test can be exhaustive: every `(from, to)` pair not in the table
+must raise, checked over the full state×state product rather than a hand-picked sample.
