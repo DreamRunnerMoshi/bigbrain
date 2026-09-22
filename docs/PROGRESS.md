@@ -3,6 +3,51 @@
 One entry per milestone, newest first (CLAUDE.md working rule 4). Milestones and their
 acceptance criteria are spec section 11.
 
+## M1 - Wire format and crypto (done)
+
+Done:
+
+- `common/canonical.py`: `canonical_json_bytes()` -- the one shared canonical-JSON
+  function (sorted keys, no whitespace, UTF-8) used by both `common/audit.py` (refactored
+  to use it instead of its own private copy) and `common/envelope.py`.
+- `common/ids.py`: `uuid7()` (RFC 9562 UUIDv7, hand-verified bit layout: version/variant
+  nibbles, monotonic ordering), `new_msg_id()`, `new_session_id()` (opaque random 128-bit,
+  base64url).
+- `common/clock.py`: `SystemClock`/`FixedClock`/`Clock` protocol, `rfc3339()`.
+- `common/crypto.py` (ADR-004): thin PyNaCl wrapper -- Ed25519 `sign`/`verify` (`verify`
+  never raises, for I7 drop-and-log), `SecretBox` (intents), `SealedBox` (offers sealed to
+  `reply_pubkey`), `Box` (counters/checkout). 18 property tests: round-trips, wrong-key and
+  tampered-ciphertext failures, nonce/ephemeral-key freshness.
+- `common/envelope.py`: the signed `Envelope` (spec section 6.1) -- `Base64Bytes` fields
+  for `nonce`/`ciphertext`/`sig`, `sign_envelope`/`verify_envelope` over
+  `envelope_signing_bytes` (canonical JSON, `sig` excluded). `MessageType` lives here, not
+  in `protocol/` (ADR-005); `protocol/performatives.py` re-exports it. 21 tests: sign/verify
+  round-trip, I7 tamper coverage across all 11 message types, per-field tamper, JSON
+  round-trip, empty-nonce (SealedBox) case, field validation.
+- `protocol/payloads.py`: the 14 inner payload models (spec section 6.2) -- Intent,
+  Offer (+ Shop/Item/Terms/Provenance/ShopText), Counter, CheckoutRequest,
+  CheckoutReady, Failure. ADR-006: CheckoutReady/Failure split 1:1 with envelope
+  type=CHECKOUT_READY/FAILURE; offer revisions reuse `Offer` with a bumped
+  `offer_version` rather than a separate class. 41 tests: round-trip + extra-field-rejected
+  per model, every numeric/literal constraint.
+- `protocol/state_machine.py`: `SessionState` (16 states), explicit `TRANSITIONS` table
+  (ADR-007 pins down the edges spec section 6.4's diagram leaves implicit -- which states
+  reach `EXPIRED`/`REJECTED_ALL`), `IllegalTransitionError`, `SessionStateMachine`. 36
+  tests, including an exhaustive check over the full 16x16 state product (235 illegal
+  pairs, all raise; 21 legal edges, all succeed) plus every named path from spec 6.4
+  (Shopify checkout, sim/AP2 mandate, re-approval loop, rejected-all, expiry from every
+  waiting state).
+- ADR-004 through ADR-007 in `docs/DECISIONS.md` record every non-obvious design call
+  this milestone made beyond the spec's literal text.
+
+Verification: `uv run pytest -q` -> 148 passed, 0 deselected; `uv run ruff check .` and
+`uv run ruff format --check .` -> clean.
+
+Next: M2 - Shopify client & fixtures (read the live docs first, write
+`docs/SHOPIFY_NOTES.md`, implement the MCP client, UCP models, rate limiter, cache, agent
+profile, `probe`/`record` CLI commands, `ReplayShopify`, `FakeShopifyMCPServer`, record
+fixtures for >=5 stores).
+
 ## M0 - Skeleton and tooling (done)
 
 Done so far:
@@ -40,7 +85,4 @@ Done so far:
 - `tests/unit/test_config.py`, `test_logging.py`, `test_audit.py`: config loading and
   validation, logging idempotency, chain building across re-opened logs, tamper detection.
 
-Verification: `uv run pytest -q` -> 15 passed, 0 deselected; `uv run ruff check .` -> clean.
-
-Next: M1 - wire format and crypto (envelope, canonical JSON, signatures, payload models,
-state machine) plus the I7 tamper tests.
+Verification: `uv run pytest -q` -> 16 passed, 0 deselected; `uv run ruff check .` -> clean.
